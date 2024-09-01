@@ -1,5 +1,6 @@
 {
   "dependencies": {
-    "sharp": "^0.33.4"
+    "sharp": "^0.33.4",
+    "node-fetch": "^3.3.2"
   }
 }

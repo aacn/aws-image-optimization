@@ -65,13 +65,20 @@ function constructNormalizedUri(originalImagePath, normalizedOperations) {
 
 function handler(event) {
     const request = event.request;
+
+    if (request.uri.endsWith('/')) {
+        request.uri = request.uri.slice(0, -1)
+    }
+
     const originalImagePath = request.uri;
 
-    if (request.querystring) {
-        const normalizedOperations = normalizeOperations(request);
-        request.uri = constructNormalizedUri(originalImagePath, normalizedOperations);
-    } else {
-        request.uri = `${originalImagePath}/original`;
+    if (originalImagePath) {
+        if (request.querystring) {
+            const normalizedOperations = normalizeOperations(request);
+            request.uri = constructNormalizedUri(originalImagePath, normalizedOperations);
+        } else {
+            request.uri = `${originalImagePath}/original`;
+        }
     }
 
     // remove query strings

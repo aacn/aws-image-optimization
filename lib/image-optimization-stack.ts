@@ -19,10 +19,7 @@ import { Architecture } from 'aws-cdk-lib/aws-lambda';
 import { HttpVersion } from 'aws-cdk-lib/aws-cloudfront';
 
 // Define parameters
-const STORE_TRANSFORMED_IMAGES = 'true';
-const S3_IMAGE_BUCKET_NAME: string | undefined = process.env.S3_IMAGE_BUCKET_NAME;
 const CLOUDFRONT_ORIGIN_SHIELD_REGION = getOriginShieldRegion(process.env.AWS_REGION || process.env.CDK_DEFAULT_REGION || 'eu-central-1');
-const CLOUDFRONT_CORS_ENABLED = 'true';
 const S3_TRANSFORMED_IMAGE_EXPIRATION_DURATION = '90';
 const S3_TRANSFORMED_IMAGE_CACHE_TTL = 'max-age=31622400';
 const MAX_IMAGE_SIZE = '4700000';
@@ -41,12 +38,12 @@ export class ImageOptimizationStack extends Stack {
     super(scope, id, props);
 
     // Set up buckets
-    const { originalImageBucket, transformedImageBucket } = this.setupBuckets();
+    const {originalImageBucket, transformedImageBucket} = this.setupBuckets();
 
     // Set up Lambda environment
     const lambdaEnv: LambdaEnv = {
       originalImageBucketName: originalImageBucket.bucketName,
-      transformedImageBucketName: transformedImageBucket?.bucketName,
+      transformedImageBucketName: transformedImageBucket.bucketName,
       transformedImageCacheTTL: S3_TRANSFORMED_IMAGE_CACHE_TTL,
       maxImageSize: MAX_IMAGE_SIZE,
     };
@@ -59,45 +56,41 @@ export class ImageOptimizationStack extends Stack {
   }
 
   private setupBuckets() {
-    let originalImageBucket;
-    let transformedImageBucket;
+    // Create S3 bucket for caching original data
+    const originalImageBucket = new s3.Bucket(this, `OriginalImageBucket-${this.node.addr}`, {
+      removalPolicy: RemovalPolicy.DESTROY,
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      encryption: s3.BucketEncryption.S3_MANAGED,
+      enforceSSL: true,
+      autoDeleteObjects: true,
+    });
 
-    if (S3_IMAGE_BUCKET_NAME) {
-      originalImageBucket = s3.Bucket.fromBucketName(this, `OriginalImageBucket-${this.node.addr}`, S3_IMAGE_BUCKET_NAME);
-    } else {
-      originalImageBucket = new s3.Bucket(this, `OriginalImageBucket-${this.node.addr}`, {
-        removalPolicy: RemovalPolicy.DESTROY,
-        blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-        encryption: s3.BucketEncryption.S3_MANAGED,
-        enforceSSL: true,
-        autoDeleteObjects: true,
-      });
-    }
-
-    if (STORE_TRANSFORMED_IMAGES === 'true') {
-      transformedImageBucket = new s3.Bucket(this, `TransformedImageBucket-${this.node.addr}`, {
-        removalPolicy: RemovalPolicy.DESTROY,
-        autoDeleteObjects: true,
-        lifecycleRules: [{ expiration: Duration.days(parseInt(S3_TRANSFORMED_IMAGE_EXPIRATION_DURATION)) }],
-      });
-    }
-
+    // Create output for original data
     new CfnOutput(this, 'OriginalImagesS3Bucket', {
       description: 'S3 bucket where original images are stored',
       value: originalImageBucket.bucketName,
     });
 
-    if (transformedImageBucket) {
-      new CfnOutput(this, 'TransformedImagesS3Bucket', {
-        description: 'S3 bucket where transformed images are stored',
-        value: transformedImageBucket.bucketName,
-      });
-    }
+    // -----------TRANSFORMED--------------
 
-    return { originalImageBucket, transformedImageBucket };
+    // Create S3 bucket for caching transformed data
+    const transformedImageBucket = new s3.Bucket(this, `TransformedImageBucket-${this.node.addr}`, {
+      removalPolicy: RemovalPolicy.DESTROY,
+      autoDeleteObjects: true,
+      // TODO: define lifecycle rules more granularly if caching other data
+      lifecycleRules: [{expiration: Duration.days(parseInt(S3_TRANSFORMED_IMAGE_EXPIRATION_DURATION))}],
+    });
+
+    // Create output for transformed data
+    new CfnOutput(this, 'TransformedImagesS3Bucket', {
+      description: 'S3 bucket where transformed images are stored',
+      value: transformedImageBucket.bucketName,
+    });
+
+    return {originalImageBucket, transformedImageBucket};
   }
 
-  private createLambdaFunction(lambdaEnv: LambdaEnv, originalImageBucket: s3.IBucket, transformedImageBucket?: s3.IBucket) {
+  private createLambdaFunction(lambdaEnv: LambdaEnv, originalImageBucket: s3.IBucket, transformedImageBucket: s3.IBucket) {
     const imageProcessing = new lambda.Function(this, `ImageProcessingFunction-${this.node.addr}`, {
       runtime: lambda.Runtime.NODEJS_20_X,
       handler: 'index.handler',
@@ -109,59 +102,54 @@ export class ImageOptimizationStack extends Stack {
       architecture: Architecture.ARM_64,
     });
 
-    const s3ReadPolicy = new iam.PolicyStatement({
+    // Add a Read Policy to the lambda
+    imageProcessing.addToRolePolicy(new iam.PolicyStatement({
       actions: ['s3:GetObject'],
       resources: [`arn:aws:s3:::${originalImageBucket.bucketName}/*`],
-    });
+    }));
 
-    imageProcessing.addToRolePolicy(s3ReadPolicy);
-
-    if (transformedImageBucket) {
-      const s3WritePolicy = new iam.PolicyStatement({
-        actions: ['s3:PutObject'],
-        resources: [`arn:aws:s3:::${transformedImageBucket.bucketName}/*`],
-      });
-
-      imageProcessing.addToRolePolicy(s3WritePolicy);
-    }
+    // Add a Write Policy to the lambda
+    imageProcessing.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['s3:PutObject'],
+      resources: [`arn:aws:s3:::${transformedImageBucket.bucketName}/*`],
+    }));
 
     return imageProcessing;
   }
 
-  private setupCloudFrontDistribution(imageProcessing: lambda.Function, transformedImageBucket?: s3.IBucket) {
+  private setupCloudFrontDistribution(imageProcessing: lambda.Function, transformedImageBucket: s3.IBucket) {
     const imageProcessingURL = imageProcessing.addFunctionUrl();
     const imageProcessingDomainName = Fn.parseDomainName(imageProcessingURL.url);
 
     const urlRewriteFunction = new cloudfront.Function(this, `URLRewriteFunction-${this.node.addr}`, {
-      code: cloudfront.FunctionCode.fromFile({ filePath: 'functions/url-rewrite/index.js' }),
+      code: cloudfront.FunctionCode.fromFile({filePath: 'functions/url-rewrite/index.js'}),
+      runtime: cloudfront.FunctionRuntime.JS_2_0,
+      functionName: `URLRewriteFunction-${this.node.addr}`,
+      comment: "Rewrites requested image paths"
     });
 
-    const origin = transformedImageBucket
-      ? new origins.OriginGroup({
-          primaryOrigin: new origins.S3Origin(transformedImageBucket, { originShieldRegion: CLOUDFRONT_ORIGIN_SHIELD_REGION }),
-          fallbackOrigin: new origins.HttpOrigin(imageProcessingDomainName, { originShieldRegion: CLOUDFRONT_ORIGIN_SHIELD_REGION }),
-          fallbackStatusCodes: [403, 500, 503, 504],
-        })
-      : new origins.HttpOrigin(imageProcessingDomainName, { originShieldRegion: CLOUDFRONT_ORIGIN_SHIELD_REGION });
+    const origin = new origins.OriginGroup({
+      primaryOrigin: new origins.S3Origin(transformedImageBucket, {originShieldRegion: CLOUDFRONT_ORIGIN_SHIELD_REGION}),
+      fallbackOrigin: new origins.HttpOrigin(imageProcessingDomainName, {originShieldRegion: CLOUDFRONT_ORIGIN_SHIELD_REGION}),
+      fallbackStatusCodes: [403, 500, 503, 504],
+    });
 
-    const responseHeadersPolicy = CLOUDFRONT_CORS_ENABLED === 'true'
-      ? new cloudfront.ResponseHeadersPolicy(this, `ResponseHeadersPolicy-${this.node.addr}`, {
-          corsBehavior: {
-            accessControlAllowCredentials: false,
-            accessControlAllowHeaders: ['*'],
-            accessControlAllowMethods: ['GET'],
-            accessControlAllowOrigins: ['*'],
-            accessControlMaxAge: Duration.seconds(600),
-            originOverride: false,
-          },
-          customHeadersBehavior: {
-            customHeaders: [
-              { header: 'x-cdn-image-optimization', value: 'v1.0', override: true },
-              { header: 'vary', value: 'accept', override: true },
-            ],
-          },
-        })
-      : undefined;
+    const responseHeadersPolicy = new cloudfront.ResponseHeadersPolicy(this, `ResponseHeadersPolicy-${this.node.addr}`, {
+      corsBehavior: {
+        accessControlAllowCredentials: false,
+        accessControlAllowHeaders: ['*'],
+        accessControlAllowMethods: ['GET'],
+        accessControlAllowOrigins: ['*'],
+        accessControlMaxAge: Duration.seconds(600),
+        originOverride: false,
+      },
+      customHeadersBehavior: {
+        customHeaders: [
+          {header: 'x-cdn-image-optimization', value: 'v1.0', override: true},
+          {header: 'vary', value: 'accept', override: true},
+        ],
+      },
+    });
 
     const cachePolicy = new cloudfront.CachePolicy(this, `ImageCachePolicy-${this.node.addr}`, {
       defaultTtl: Duration.hours(24),
@@ -197,8 +185,8 @@ export class ImageOptimizationStack extends Stack {
     });
 
     const cfnDistribution = distribution.node.defaultChild as cloudfront.CfnDistribution;
-    const originIndex = transformedImageBucket ? 1 : 0;
-    cfnDistribution.addPropertyOverride(`DistributionConfig.Origins.${originIndex}.OriginAccessControlId`, oac.getAtt('Id'));
+    // originIndex is 1 because of transformedImageBucket
+    cfnDistribution.addPropertyOverride(`DistributionConfig.Origins.${1}.OriginAccessControlId`, oac.getAtt('Id'));
 
     imageProcessing.addPermission('AllowCloudFrontServicePrincipal', {
       principal: new iam.ServicePrincipal('cloudfront.amazonaws.com'),
@@ -211,4 +199,5 @@ export class ImageOptimizationStack extends Stack {
       value: distribution.distributionDomainName,
     });
   }
+
 }
