@@ -63,15 +63,18 @@ export const handler = async (event) => {
     return sendError(400);
   }
 
-  const referer = event.headers.referer;
-
-  if (!referer || !isValidRefererUrl(referer)) {
-    logError(`Invalid or empty Referer header not allowed`);
-    return sendError(400);
-  }
-
   const imagePathArray = event.requestContext.http.path.split("/");
   const operationsPrefix = imagePathArray.pop();
+
+  // Only check for referer if resize is requested
+  if (operationsPrefix !== "original") {
+    const referer = event.headers.referer;
+
+    if (!referer || !isValidRefererUrl(referer)) {
+      logError(`Invalid or empty Referer header not allowed`);
+      return sendError(400);
+    }
+  }
 
   console.log("Removing operations prefix:", operationsPrefix);
   console.log("Removing path component:", imagePathArray.shift());
