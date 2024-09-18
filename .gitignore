@@ -12,3 +12,6 @@ cdk.out
 package-lock.json
 .idea
 .vscode
+.env
+
+cdk.context.json

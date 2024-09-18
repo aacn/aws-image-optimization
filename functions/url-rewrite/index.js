@@ -2,11 +2,11 @@ const SUPPORTED_FORMATS = ['auto', 'jpeg', 'webp', 'avif', 'png', 'svg', 'gif'];
 
 function getNormalizedFormat(request) {
     let format = 'jpeg'; // default format
-    if (request.headers['accept']) {
-        const acceptHeader = request.headers['accept'].value;
-        if (acceptHeader.includes('avif')) {
+    if (request.headers.accept) {
+        const accept = request.headers.accept.value;
+        if (accept.includes('avif')) {
             format = 'avif';
-        } else if (acceptHeader.includes('webp')) {
+        } else if (accept.includes('webp')) {
             format = 'webp';
         }
     }

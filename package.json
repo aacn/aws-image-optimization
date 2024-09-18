@@ -5,8 +5,9 @@
     "image-optimization": "bin/image-optimization.js"
   },
   "scripts": {
-    "x64prebuild": "npm install sharp --prefix functions/image-processing/ --os=linux --cpu=x64 --libc=glibc",
-    "prebuild": "npm install sharp --prefix functions/image-processing/ --include=optional --os=linux --cpu=arm64",
+    "x64prebuild": "npm install sharp @img/sharp-libvips-linux-x64 @img/sharp-linux-x64 --prefix functions/image-processing --force --omit=optional",
+    "arm64prebuild": "npm install sharp @img/sharp-libvips-linux-arm64 @img/sharp-linux-arm64 --prefix functions/image-processing/ --force --omit=optional",
+    "prebuild": "npm run arm64prebuild",
     "build": "tsc",
     "watch": "tsc -w",
     "test": "jest",
@@ -23,6 +24,7 @@
     "typescript": "~5.3.3"
   },
   "dependencies": {
+    "dotenv": "^16.4.5",
     "aws-cdk-lib": "2.121.1",
     "constructs": "^10.3.0",
     "source-map-support": "^0.5.21"
