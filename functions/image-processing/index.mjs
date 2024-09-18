@@ -213,13 +213,15 @@ export const handler = async (event) => {
 
   const imageTooBig = Buffer.byteLength(transformedImageBuffer) > MAX_IMAGE_SIZE;
 
+  const imageStorageKey = originalImagePath;
+
   if (S3_TRANSFORMED_IMAGE_BUCKET) {
     startTime = performance.now();
     try {
       const putImageCommand = new PutObjectCommand({
         Body: transformedImageBuffer,
         Bucket: S3_TRANSFORMED_IMAGE_BUCKET,
-        Key: `${originalImagePath}/${operationsPrefix}`,
+        Key: `${imageStorageKey}/${operationsPrefix}`,
         ContentType: contentType,
         CacheControl: TRANSFORMED_IMAGE_CACHE_TTL,
       });
@@ -230,7 +232,7 @@ export const handler = async (event) => {
         return {
           statusCode: 302,
           headers: {
-            Location: `/${originalImagePath}?${operationsPrefix.replace(
+            Location: `/${imageStorageKey}?${operationsPrefix.replace(
               /,/g,
               "&"
             )}`,
