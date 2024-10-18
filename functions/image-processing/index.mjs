@@ -71,7 +71,7 @@ export const handler = async (event) => {
     const referer = event.headers.referer;
 
     if (!referer || !isValidRefererUrl(referer)) {
-      logError(`Invalid or empty Referer header not allowed`);
+      logError(`Invalid or empty Referer header not allowed: "${referer}"`);
       return sendError(400);
     }
   }
@@ -106,7 +106,7 @@ export const handler = async (event) => {
 
       const url = new URL(decodeURIComponent(originalImagePath));
 
-      console.log("Trying url", url.toString());
+      console.log("Trying remote url", url.toString());
 
       const response = await remoteImageHandler(url.toString());
 
@@ -115,7 +115,7 @@ export const handler = async (event) => {
         contentType = response.contentType;
         console.log("Got", originalImageBody.byteLength, contentType)
       } else {
-        throw new Error("Unsuccessful attempt to retrieve image.")
+        throw new Error("Unsuccessful attempt to retrieve remote image.")
       }
 
     }
@@ -131,6 +131,8 @@ export const handler = async (event) => {
   });
   const imageMetadata = await transformedImage.metadata();
 
+  console.log(`Original image: ${imageMetadata.width}w ${imageMetadata.height}h ${imageMetadata.format}`);
+
   const operationsJSON = Object.fromEntries(
     operationsPrefix.split(",").map((operation) => operation.split("="))
   );
@@ -143,14 +145,18 @@ export const handler = async (event) => {
 
     if (operationsJSON["width"]) {
       let opWidth = parseInt(operationsJSON["width"]);
-      resizingOptions.width =
-        opWidth > MAX_IMAGE_DIMENSION ? MAX_IMAGE_DIMENSION : opWidth;
+      resizingOptions.width = opWidth > MAX_IMAGE_DIMENSION ? MAX_IMAGE_DIMENSION : opWidth;
+
+      // Prevent upscale
+      resizingOptions.width = resizingOptions.width > imageMetadata.width ? imageMetadata.width : resizingOptions.width;
     }
 
     if (operationsJSON["height"]) {
       let opHeight = parseInt(operationsJSON["height"]);
-      resizingOptions.height =
-        opHeight > MAX_IMAGE_DIMENSION ? MAX_IMAGE_DIMENSION : opHeight;
+      resizingOptions.height = opHeight > MAX_IMAGE_DIMENSION ? MAX_IMAGE_DIMENSION : opHeight;
+
+      // Prevent upscale
+      resizingOptions.height = resizingOptions.height > imageMetadata.height ? imageMetadata.height : resizingOptions.height;
     }
 
     if (Object.keys(resizingOptions).length > 0) {

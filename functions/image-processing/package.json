@@ -1,8 +1,8 @@
 {
   "dependencies": {
-    "@img/sharp-libvips-linux-arm64": "^1.0.4",
-    "@img/sharp-linux-arm64": "^0.33.5",
+    "@img/sharp-libvips-linux-arm64": "1.0.0",
+    "@img/sharp-linux-arm64": "0.33.4",
     "node-fetch": "^3.3.2",
-    "sharp": "^0.33.5"
+    "sharp": "0.33.4"
   }
 }

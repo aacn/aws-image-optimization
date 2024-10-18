@@ -6,7 +6,7 @@
   },
   "scripts": {
     "x64prebuild": "npm install sharp @img/sharp-libvips-linux-x64 @img/sharp-linux-x64 --prefix functions/image-processing --force --omit=optional",
-    "arm64prebuild": "npm install sharp @img/sharp-libvips-linux-arm64 @img/sharp-linux-arm64 --prefix functions/image-processing/ --force --omit=optional",
+    "arm64prebuild": "npm install sharp@0.33.4 @img/sharp-libvips-linux-arm64 @img/sharp-linux-arm64 --prefix functions/image-processing/ --force --omit=optional",
     "prebuild": "npm run arm64prebuild",
     "build": "tsc",
     "watch": "tsc -w",
